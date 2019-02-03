@@ -305,7 +305,7 @@ func (p *Plugin) NodeStageVolume(
 			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to mkdir: %v", err.Error()))
 		}
 
-		_, err = exec.Command("ln", "-s", device, mountpoint).CombinedOutput()
+		_, err = exec.Command("ln", "-sf", device, mountpoint).CombinedOutput()
 		if err != nil {
 			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to ln: %v", err.Error()))
 		}
