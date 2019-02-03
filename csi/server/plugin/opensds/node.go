@@ -242,51 +242,73 @@ func (p *Plugin) NodeStageVolume(
 
 	// Check if it is: "Volume published but is incompatible"
 	mnt := req.VolumeCapability.GetMount()
-	mountFlags := mnt.MountFlags
-	_, err = exec.Command("findmnt", device, mountpoint).CombinedOutput()
-	glog.V(5).Infof("findmnt err: %v \n", err)
+	block := req.VolumeCapability.GetBlock()
+	glog.V(5).Infof("VolumeCapability Mount=%+v, Block=%+v\n", mnt, block)
+	if nil == vol.Metadata {
+		vol.Metadata = make(map[string]string)
+	}
 
-	if nil == err {
-		if len(mountFlags) > 0 {
-			_, err := exec.Command("findmnt", "-o", strings.Join(mountFlags, ","), device, mountpoint).CombinedOutput()
-			if nil != err {
-				return nil, status.Error(codes.Aborted, "Volume published but is incompatible")
+	if nil != mnt {
+		vol.Metadata[KCSIVolumeMode] = "Filesystem"
+		mountFlags := mnt.MountFlags
+		_, err = exec.Command("findmnt", device, mountpoint).CombinedOutput()
+		glog.V(5).Infof("findmnt err: %v \n", err)
+
+		if nil == err {
+			if len(mountFlags) > 0 {
+				_, err := exec.Command("findmnt", "-o", strings.Join(mountFlags, ","), device, mountpoint).CombinedOutput()
+				if nil != err {
+					return nil, status.Error(codes.Aborted, "Volume published but is incompatible")
+				}
 			}
+
+			return &csi.NodeStageVolumeResponse{}, nil
 		}
 
-		return &csi.NodeStageVolumeResponse{}, nil
-	}
-
-	// Format
-	curFSType := connector.GetFSType(attachment.Mountpoint)
-	hopeFSType := DefFSType
-	if "" != mnt.FsType {
-		hopeFSType = mnt.FsType
-	}
-
-	if "" == curFSType {
-		_, err := exec.Command("mkfs", "-t", hopeFSType, "-F", device).CombinedOutput()
-		if err != nil {
-			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to mkfs: %v", err.Error()))
-		}
-	} else {
+		// Format
+		curFSType := connector.GetFSType(attachment.Mountpoint)
+		hopeFSType := DefFSType
 		if "" != mnt.FsType {
-			if mnt.FsType != curFSType {
-				glog.Errorf("Volume formatted but is incompatible, %v != %v!", mnt.FsType,curFSType )
-				return nil, status.Error(codes.Aborted, "Volume formatted but is incompatible")
+			hopeFSType = mnt.FsType
+		}
+
+		if "" == curFSType {
+			_, err := exec.Command("mkfs", "-t", hopeFSType, "-F", device).CombinedOutput()
+			if err != nil {
+				return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to mkfs: %v", err.Error()))
 			}
+		} else {
+			if "" != mnt.FsType {
+				if mnt.FsType != curFSType {
+					glog.Errorf("Volume formatted but is incompatible, %v != %v!", mnt.FsType, curFSType)
+					return nil, status.Error(codes.Aborted, "Volume formatted but is incompatible")
+				}
+			}
+		}
+
+		// Mount
+		_, err = exec.Command("mkdir", "-p", mountpoint).CombinedOutput()
+		if err != nil {
+			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to mkdir: %v", err.Error()))
+		}
+
+		err = mountDeviceAndUpdateAttachment(device, mountpoint, KStagingTargetPath, mountFlags, needUpdateAtc, attachment)
+		if err != nil {
+			return nil, err
 		}
 	}
 
-	// Mount
-	_, err = exec.Command("mkdir", "-p", mountpoint).CombinedOutput()
-	if err != nil {
-		return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to mkdir: %v", err.Error()))
-	}
+	if nil != block {
+		vol.Metadata[KCSIVolumeMode] = "Block"
+		_, err = exec.Command("mkdir", "-p", mountpoint).CombinedOutput()
+		if err != nil {
+			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to mkdir: %v", err.Error()))
+		}
 
-	err = mountDeviceAndUpdateAttachment(device, mountpoint, KStagingTargetPath, mountFlags, needUpdateAtc, attachment)
-	if err != nil {
-		return nil, err
+		_, err = exec.Command("ln", "-s", device, mountpoint).CombinedOutput()
+		if err != nil {
+			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to ln: %v", err.Error()))
+		}
 	}
 
 	vol.Status = model.VolumeInUse
@@ -312,15 +334,23 @@ func (p *Plugin) NodeUnstageVolume(
 		return nil, status.Error(codes.InvalidArgument, "Volume_id/staging_target_path must be specified")
 	}
 
-	// Umount
-	err := connector.Umount(req.StagingTargetPath)
+	vol, attachment, err := getVolumeAndAttachmentByVolumeId(req.VolumeId)
 	if err != nil {
 		return nil, err
 	}
 
-	vol, attachment, err := getVolumeAndAttachmentByVolumeId(req.VolumeId)
-	if err != nil {
-		return nil, err
+	if KCSIFilesystem == vol.Metadata[KCSIVolumeMode] {
+		err = connector.Umount(req.StagingTargetPath)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if KCSIBlock == vol.Metadata[KCSIVolumeMode] {
+		_, err = exec.Command("rm", "-rf", req.StagingTargetPath).CombinedOutput()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	err = delTargetPathInAttachment(attachment, KStagingTargetPath, req.StagingTargetPath)
@@ -370,29 +400,46 @@ func (p *Plugin) NodePublishVolume(
 
 	// Check if it is: "Volume published but is incompatible"
 	mnt := req.VolumeCapability.GetMount()
-	mountFlags := append(mnt.MountFlags, "bind")
-	if req.Readonly {
-		mountFlags = append(mountFlags, "ro")
-	}
+	block := req.VolumeCapability.GetBlock()
+	glog.V(5).Infof("VolumeCapability Mount=%+v, Block=%+v\n", mnt, block)
 
-	_, err = exec.Command("findmnt", device, mountpoint).CombinedOutput()
-	glog.V(5).Infof("findmnt err: %v \n", err)
-
-	if nil == err {
-		if len(mountFlags) > 0 {
-			_, err := exec.Command("findmnt", "-o", strings.Join(mountFlags, ","), device, mountpoint).CombinedOutput()
-			if nil != err {
-				return nil, status.Error(codes.Aborted, "Volume published but is incompatible")
-			}
+	if nil != mnt {
+		mountFlags := append(mnt.MountFlags, "bind")
+		if req.Readonly {
+			mountFlags = append(mountFlags, "ro")
 		}
 
-		return &csi.NodePublishVolumeResponse{}, nil
+		_, err = exec.Command("findmnt", device, mountpoint).CombinedOutput()
+		glog.V(5).Infof("findmnt err: %v \n", err)
+
+		if nil == err {
+			if len(mountFlags) > 0 {
+				_, err := exec.Command("findmnt", "-o", strings.Join(mountFlags, ","), device, mountpoint).CombinedOutput()
+				if nil != err {
+					return nil, status.Error(codes.Aborted, "Volume published but is incompatible")
+				}
+			}
+
+			return &csi.NodePublishVolumeResponse{}, nil
+		}
+
+		// Mount
+		err = mountDeviceAndUpdateAttachment(device, mountpoint, KTargetPath, mountFlags, needUpdateAtc, attachment)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	// Mount
-	err = mountDeviceAndUpdateAttachment(device, mountpoint, KTargetPath, mountFlags, needUpdateAtc, attachment)
-	if err != nil {
-		return nil, err
+	if nil != block {
+		_, err = exec.Command("mkdir", "-p", mountpoint).CombinedOutput()
+		if err != nil {
+			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to mkdir: %v", err.Error()))
+		}
+
+		_, err = exec.Command("ln", "-s", device, mountpoint).CombinedOutput()
+		if err != nil {
+			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to ln: %v", err.Error()))
+		}
 	}
 
 	glog.V(5).Info("NodePublishVolume success")
@@ -412,15 +459,23 @@ func (p *Plugin) NodeUnpublishVolume(
 		return nil, status.Error(codes.InvalidArgument, "Volume_id/target_path must be specified")
 	}
 
-	// Umount
-	err := connector.Umount(req.TargetPath)
+	vol, attachment, err := getVolumeAndAttachmentByVolumeId(req.VolumeId)
 	if err != nil {
 		return nil, err
 	}
 
-	_, attachment, err := getVolumeAndAttachmentByVolumeId(req.VolumeId)
-	if err != nil {
-		return nil, err
+	if KCSIFilesystem == vol.Metadata[KCSIVolumeMode] {
+		err := connector.Umount(req.TargetPath)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if KCSIBlock == vol.Metadata[KCSIVolumeMode] {
+		_, err = exec.Command("rm", "-rf", req.TargetPath).CombinedOutput()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	err = delTargetPathInAttachment(attachment, KTargetPath, req.TargetPath)
@@ -525,7 +580,7 @@ func (p *Plugin) NodeGetCapabilities(
 	}, nil
 }
 
-// NodeGetVolumeStats
+// NodeGetVolumeStats implementation
 func (p *Plugin) NodeGetVolumeStats(
 	ctx context.Context,
 	req *csi.NodeGetVolumeStatsRequest) (
