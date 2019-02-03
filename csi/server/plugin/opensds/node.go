@@ -300,11 +300,6 @@ func (p *Plugin) NodeStageVolume(
 
 	if nil != block {
 		vol.Metadata[KCSIVolumeMode] = "Block"
-		_, err = exec.Command("mkdir", "-p", mountpoint).CombinedOutput()
-		if err != nil {
-			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to mkdir: %v", err.Error()))
-		}
-
 		_, err = exec.Command("ln", "-sf", device, mountpoint).CombinedOutput()
 		if err != nil {
 			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to ln: %v", err.Error()))
@@ -431,11 +426,6 @@ func (p *Plugin) NodePublishVolume(
 	}
 
 	if nil != block {
-		_, err = exec.Command("mkdir", "-p", mountpoint).CombinedOutput()
-		if err != nil {
-			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to mkdir: %v", err.Error()))
-		}
-
 		_, err = exec.Command("ln", "-sf", device, mountpoint).CombinedOutput()
 		if err != nil {
 			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to ln: %v", err.Error()))
