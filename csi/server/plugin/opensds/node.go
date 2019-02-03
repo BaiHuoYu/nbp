@@ -16,6 +16,7 @@ package opensds
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -300,6 +301,16 @@ func (p *Plugin) NodeStageVolume(
 
 	if nil != block {
 		vol.Metadata[KCSIVolumeMode] = "Block"
+		_, err = exec.Command("mkdir", "-p", mountpoint).CombinedOutput()
+		if err != nil {
+			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to mkdir: %v", err.Error()))
+		}
+
+		_, err = os.Lstat(mountpoint)
+		if err != nil && os.IsNotExist(err) {
+			return nil, err
+		}
+
 		_, err = exec.Command("ln", "-sf", device, mountpoint).CombinedOutput()
 		if err != nil {
 			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to ln: %v", err.Error()))
@@ -426,6 +437,16 @@ func (p *Plugin) NodePublishVolume(
 	}
 
 	if nil != block {
+		_, err = exec.Command("mkdir", "-p", mountpoint).CombinedOutput()
+		if err != nil {
+			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to mkdir: %v", err.Error()))
+		}
+
+		_, err = os.Lstat(mountpoint)
+		if err != nil && os.IsNotExist(err) {
+			return nil, err
+		}
+
 		_, err = exec.Command("ln", "-sf", device, mountpoint).CombinedOutput()
 		if err != nil {
 			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to ln: %v", err.Error()))
