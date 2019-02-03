@@ -300,7 +300,7 @@ func (p *Plugin) NodeStageVolume(
 	}
 
 	if nil != block {
-		glog.V(5).Infof("NodePublishVolume, Publish Block Volume Block=%+v\n, mountpoint=%+v\n, device=%+v\n", block, mountpoint)
+		glog.V(5).Infof("NodePublishVolume, Publish Block Volume Block=%+v\n, mountpoint=%+v\n, device=%+v\n", block, mountpoint, device)
 		vol.Metadata[KCSIVolumeMode] = "Block"
 		_, err = exec.Command("mkdir", "-p", mountpoint).CombinedOutput()
 		if err != nil {
@@ -438,7 +438,7 @@ func (p *Plugin) NodePublishVolume(
 	}
 
 	if nil != block {
-		glog.V(5).Infof("NodePublishVolume, Publish Block Volume Block=%+v\n, mountpoint=%+v\n, device=%+v\n", block, mountpoint)
+		glog.V(5).Infof("NodePublishVolume, Publish Block Volume Block=%+v\n, mountpoint=%+v\n, device=%+v\n", block, mountpoint, device)
 		_, err = exec.Command("mkdir", "-p", mountpoint).CombinedOutput()
 		if err != nil {
 			glog.V(5).Infof("mkdir err =%+v", block, err)
