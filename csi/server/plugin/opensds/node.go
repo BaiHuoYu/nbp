@@ -437,8 +437,10 @@ func (p *Plugin) NodePublishVolume(
 	}
 
 	if nil != block {
+		glog.V(5).Infof("NodePublishVolume, Publish Block Volume Block=%+v, mountpoint\n", block, mountpoint)
 		_, err = exec.Command("mkdir", "-p", mountpoint).CombinedOutput()
 		if err != nil {
+			glog.V(5).Infof("mkdir err =%+v", block, err)
 			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to mkdir: %v", err.Error()))
 		}
 
