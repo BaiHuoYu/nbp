@@ -312,9 +312,9 @@ func (p *Plugin) NodeStageVolume(
 			return nil, err
 		}
 
-		_, err = exec.Command("ln", "-sf", device, mountpoint).CombinedOutput()
+		err = os.Symlink(device, mountpoint)
 		if err != nil {
-			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to ln: %v", err.Error()))
+			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to Symlink: %v", err.Error()))
 		}
 	}
 
@@ -439,6 +439,12 @@ func (p *Plugin) NodePublishVolume(
 
 	if nil != block {
 		glog.V(5).Infof("NodePublishVolume, Publish Block Volume Block=%+v\n, mountpoint=%+v\n, device=%+v\n", block, mountpoint, device)
+
+		_, err = os.Lstat(mountpoint)
+		if err != nil && os.IsNotExist(err) {
+			glog.V(5).Infof("mountpoint IsNotExist")
+		}
+
 		_, err = exec.Command("mkdir", "-p", mountpoint).CombinedOutput()
 		if err != nil {
 			glog.V(5).Infof("mkdir err =%+v", block, err)
@@ -450,9 +456,9 @@ func (p *Plugin) NodePublishVolume(
 			return nil, err
 		}
 
-		_, err = exec.Command("ln", "-sf", device, mountpoint).CombinedOutput()
+		err = os.Symlink(device, mountpoint)
 		if err != nil {
-			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to ln: %v", err.Error()))
+			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to Symlink: %v", err.Error()))
 		}
 	}
 
