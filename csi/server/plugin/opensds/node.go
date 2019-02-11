@@ -305,13 +305,18 @@ func (p *Plugin) NodeStageVolume(
 
 		_, err = os.Lstat(mountpoint)
 		if err != nil && os.IsNotExist(err) {
-			glog.V(5).Infof("mountpoint IsNotExist !!")
-			err = os.Symlink(device, mountpoint)
-			if err != nil {
-				return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to Symlink: %v", err.Error()))
-			}
+			glog.V(5).Infof("mountpoint IsNotExist.")
 		} else {
-			glog.V(5).Infof("mountpoint Is Exist !!")
+			glog.Errorf("Mountpoint already exists!!")
+			_, err := exec.Command("rm", "-rf", mountpoint).CombinedOutput()
+			if nil != err {
+				return nil, err
+			}
+		}
+
+		err = os.Symlink(device, mountpoint)
+		if err != nil {
+			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to Symlink: %v", err.Error()))
 		}
 	}
 
@@ -438,13 +443,18 @@ func (p *Plugin) NodePublishVolume(
 		glog.V(5).Infof("NodePublishVolume, Publish Block Volume Block=%+v\n, mountpoint=%+v\n, device=%+v\n", block, mountpoint, device)
 		_, err = os.Lstat(mountpoint)
 		if err != nil && os.IsNotExist(err) {
-			glog.V(5).Infof("mountpoint IsNotExist !!")
-			err = os.Symlink(device, mountpoint)
-			if err != nil {
-				return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to Symlink: %v", err.Error()))
-			}
+			glog.V(5).Infof("mountpoint IsNotExist.")
 		} else {
-			glog.V(5).Infof("mountpoint Is Exist !!")
+			glog.Errorf("Mountpoint already exists!!")
+			_, err := exec.Command("rm", "-rf", mountpoint).CombinedOutput()
+			if nil != err {
+				return nil, err
+			}
+		}
+
+		err = os.Symlink(device, mountpoint)
+		if err != nil {
+			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to Symlink: %v", err.Error()))
 		}
 	}
 
