@@ -302,19 +302,16 @@ func (p *Plugin) NodeStageVolume(
 	if nil != block {
 		glog.V(5).Infof("NodePublishVolume, Publish Block Volume Block=%+v\n, mountpoint=%+v\n, device=%+v\n", block, mountpoint, device)
 		vol.Metadata[KCSIVolumeMode] = "Block"
-		//_, err = exec.Command("mkdir", "-p", mountpoint).CombinedOutput()
-		//if err != nil {
-		//	return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to mkdir: %v", err.Error()))
-		//}
 
 		_, err = os.Lstat(mountpoint)
 		if err != nil && os.IsNotExist(err) {
-			return nil, err
-		}
-
-		err = os.Symlink(device, mountpoint)
-		if err != nil {
-			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to Symlink: %v", err.Error()))
+			glog.V(5).Infof("mountpoint IsNotExist !!")
+			err = os.Symlink(device, mountpoint)
+			if err != nil {
+				return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to Symlink: %v", err.Error()))
+			}
+		} else {
+			glog.V(5).Infof("mountpoint Is Exist !!")
 		}
 	}
 
@@ -439,26 +436,15 @@ func (p *Plugin) NodePublishVolume(
 
 	if nil != block {
 		glog.V(5).Infof("NodePublishVolume, Publish Block Volume Block=%+v\n, mountpoint=%+v\n, device=%+v\n", block, mountpoint, device)
-
 		_, err = os.Lstat(mountpoint)
 		if err != nil && os.IsNotExist(err) {
-			glog.V(5).Infof("mountpoint IsNotExist")
-		}
-
-		_, err = exec.Command("mkdir", "-p", mountpoint).CombinedOutput()
-		if err != nil {
-			glog.V(5).Infof("mkdir err =%+v", block, err)
-			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to mkdir: %v", err.Error()))
-		}
-
-		_, err = os.Lstat(mountpoint)
-		if err != nil && os.IsNotExist(err) {
-			return nil, err
-		}
-
-		err = os.Symlink(device, mountpoint)
-		if err != nil {
-			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to Symlink: %v", err.Error()))
+			glog.V(5).Infof("mountpoint IsNotExist !!")
+			err = os.Symlink(device, mountpoint)
+			if err != nil {
+				return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to Symlink: %v", err.Error()))
+			}
+		} else {
+			glog.V(5).Infof("mountpoint Is Exist !!")
 		}
 	}
 
