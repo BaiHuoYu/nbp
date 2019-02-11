@@ -302,10 +302,10 @@ func (p *Plugin) NodeStageVolume(
 	if nil != block {
 		glog.V(5).Infof("NodePublishVolume, Publish Block Volume Block=%+v\n, mountpoint=%+v\n, device=%+v\n", block, mountpoint, device)
 		vol.Metadata[KCSIVolumeMode] = "Block"
-		_, err = exec.Command("mkdir", "-p", mountpoint).CombinedOutput()
-		if err != nil {
-			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to mkdir: %v", err.Error()))
-		}
+		//_, err = exec.Command("mkdir", "-p", mountpoint).CombinedOutput()
+		//if err != nil {
+		//	return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to mkdir: %v", err.Error()))
+		//}
 
 		_, err = os.Lstat(mountpoint)
 		if err != nil && os.IsNotExist(err) {
