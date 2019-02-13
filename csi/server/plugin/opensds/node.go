@@ -55,17 +55,37 @@ func getVolumeAndAttachment(volumeId string, attachmentId string) (*model.Volume
 }
 
 // mountDeviceAndUpdateAttachment Mount device and then update attachment
-func mountDeviceAndUpdateAttachment(device string, mountpoint string, key string, mountFlags []string, needUpdateAtc bool, attachment *model.VolumeAttachmentSpec) error {
+func mountDeviceAndUpdateAttachment(device string, mountpoint string, key string, mountFlags []string, needUpdateAtc bool, attachment *model.VolumeAttachmentSpec, block *csi.VolumeCapability_BlockVolume) error {
 	var err error
 
-	if len(mountFlags) > 0 {
-		_, err = exec.Command("mount", "-o", strings.Join(mountFlags, ","), device, mountpoint).CombinedOutput()
-	} else {
-		_, err = exec.Command("mount", device, mountpoint).CombinedOutput()
-	}
+	if nil == block {
+		if len(mountFlags) > 0 {
+			_, err = exec.Command("mount", "-o", strings.Join(mountFlags, ","), device, mountpoint).CombinedOutput()
+		} else {
+			_, err = exec.Command("mount", device, mountpoint).CombinedOutput()
+		}
 
-	if nil != err {
-		return status.Error(codes.Aborted, fmt.Sprintf("failed to mount: %v", err.Error()))
+		if nil != err {
+			return status.Error(codes.Aborted, fmt.Sprintf("failed to mount: %v", err.Error()))
+		}
+	} else {
+		_, err = os.Lstat(mountpoint)
+
+		if err != nil && os.IsNotExist(err) {
+			glog.V(5).Infof("Mountpoint=%v is not exist", mountpoint)
+		} else {
+			glog.Errorf("Mountpoint=%v already exists!", mountpoint)
+			_, err := exec.Command("rm", "-rf", mountpoint).CombinedOutput()
+
+			if nil != err {
+				return err
+			}
+		}
+
+		err = os.Symlink(device, mountpoint)
+		if err != nil {
+			return err
+		}
 	}
 
 	// update volume Attachmentment
@@ -254,9 +274,10 @@ func (p *Plugin) NodeStageVolume(
 		vol.Metadata = make(map[string]string)
 	}
 
+	var mountFlags []string
 	if nil == block {
 		vol.Metadata[KCSIVolumeMode] = "Filesystem"
-		mountFlags := mnt.MountFlags
+		mountFlags = mnt.MountFlags
 		_, err = exec.Command("findmnt", device, mountpoint).CombinedOutput()
 		glog.V(5).Infof("findmnt err: %v \n", err)
 
@@ -297,37 +318,13 @@ func (p *Plugin) NodeStageVolume(
 		if err != nil {
 			return nil, status.Error(codes.Aborted, fmt.Sprintf("failed to mkdir: %v", err.Error()))
 		}
-
-		err = mountDeviceAndUpdateAttachment(device, mountpoint, KStagingTargetPath, mountFlags, needUpdateAtc, attachment)
-		if err != nil {
-			return nil, err
-		}
 	} else {
 		vol.Metadata[KCSIVolumeMode] = "Block"
-		_, err = os.Lstat(mountpoint)
+	}
 
-		if err != nil && os.IsNotExist(err) {
-			glog.V(5).Infof("Mountpoint=%v is not exist", mountpoint)
-		} else {
-			glog.Errorf("Mountpoint=%v already exists!", mountpoint)
-			_, err := exec.Command("rm", "-rf", mountpoint).CombinedOutput()
-
-			if nil != err {
-				return nil, err
-			}
-		}
-
-		err = os.Symlink(device, mountpoint)
-		if err != nil {
-			return nil, err
-		}
-		
-		if needUpdateAtc {
-			_, err = Client.UpdateVolumeAttachment(attachment.Id, attachment)
-			if err != nil {
-				return nil, status.Error(codes.FailedPrecondition, "update volume attachmentment failed")
-			}
-		}
+	err = mountDeviceAndUpdateAttachment(device, mountpoint, KStagingTargetPath, mountFlags, needUpdateAtc, attachment, block)
+	if err != nil {
+		return nil, err
 	}
 
 	vol.Status = model.VolumeInUse
@@ -365,12 +362,12 @@ func (p *Plugin) NodeUnstageVolume(
 		}
 	}
 
-	//if KCSIBlock == vol.Metadata[KCSIVolumeMode] {
-	//	_, err = exec.Command("rm", "-rf", req.StagingTargetPath).CombinedOutput()
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//}
+	if KCSIBlock == vol.Metadata[KCSIVolumeMode] {
+		_, err = exec.Command("rm", "-rf", req.StagingTargetPath).CombinedOutput()
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	err = delTargetPathInAttachment(attachment, KStagingTargetPath, req.StagingTargetPath)
 	if err != nil {
@@ -425,8 +422,9 @@ func (p *Plugin) NodePublishVolume(
 		return nil, status.Error(codes.InvalidArgument, "volumeMode cannot be both Block and Filesystem")
 	}
 
+	var mountFlags []string
 	if nil == block {
-		mountFlags := append(mnt.MountFlags, "bind")
+		mountFlags = append(mnt.MountFlags, "bind")
 		if req.Readonly {
 			mountFlags = append(mountFlags, "ro")
 		}
@@ -445,29 +443,11 @@ func (p *Plugin) NodePublishVolume(
 			return &csi.NodePublishVolumeResponse{}, nil
 		}
 
-		// Mount
-		err = mountDeviceAndUpdateAttachment(device, mountpoint, KTargetPath, mountFlags, false, attachment)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		_, err = os.Lstat(mountpoint)
+	}
 
-		if err != nil && os.IsNotExist(err) {
-			glog.V(5).Infof("Mountpoint=%v is not exist", mountpoint)
-		} else {
-			glog.Errorf("Mountpoint=%v already exists!", mountpoint)
-			_, err := exec.Command("rm", "-rf", mountpoint).CombinedOutput()
-
-			if nil != err {
-				return nil, err
-			}
-		}
-
-		err = os.Symlink(device, mountpoint)
-		if err != nil {
-			return nil, err
-		}
+	err = mountDeviceAndUpdateAttachment(device, mountpoint, KTargetPath, mountFlags, false, attachment, block)
+	if err != nil {
+		return nil, err
 	}
 
 	glog.V(5).Info("NodePublishVolume success")
@@ -499,12 +479,12 @@ func (p *Plugin) NodeUnpublishVolume(
 		}
 	}
 
-	//if KCSIBlock == vol.Metadata[KCSIVolumeMode] {
-	//	_, err = exec.Command("rm", "-rf", req.TargetPath).CombinedOutput()
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//}
+	if KCSIBlock == vol.Metadata[KCSIVolumeMode] {
+		_, err = exec.Command("rm", "-rf", req.TargetPath).CombinedOutput()
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	err = delTargetPathInAttachment(attachment, KTargetPath, req.TargetPath)
 	if err != nil {
