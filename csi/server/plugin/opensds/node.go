@@ -365,12 +365,12 @@ func (p *Plugin) NodeUnstageVolume(
 		}
 	}
 
-	if KCSIBlock == vol.Metadata[KCSIVolumeMode] {
-		_, err = exec.Command("rm", "-rf", req.StagingTargetPath).CombinedOutput()
-		if err != nil {
-			return nil, err
-		}
-	}
+	//if KCSIBlock == vol.Metadata[KCSIVolumeMode] {
+	//	_, err = exec.Command("rm", "-rf", req.StagingTargetPath).CombinedOutput()
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//}
 
 	err = delTargetPathInAttachment(attachment, KStagingTargetPath, req.StagingTargetPath)
 	if err != nil {
@@ -499,12 +499,12 @@ func (p *Plugin) NodeUnpublishVolume(
 		}
 	}
 
-	if KCSIBlock == vol.Metadata[KCSIVolumeMode] {
-		_, err = exec.Command("rm", "-rf", req.TargetPath).CombinedOutput()
-		if err != nil {
-			return nil, err
-		}
-	}
+	//if KCSIBlock == vol.Metadata[KCSIVolumeMode] {
+	//	_, err = exec.Command("rm", "-rf", req.TargetPath).CombinedOutput()
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//}
 
 	err = delTargetPathInAttachment(attachment, KTargetPath, req.TargetPath)
 	if err != nil {
